@@ -5,11 +5,11 @@
         WMHEInboundQueue inboundQueueLocal;
         try
         {
-            recordToUpdate.setConnection(userConnection);
             select firstonly forupdate recordToUpdate where recordToUpdate.RecId == _processingRecId ;
 
             if (recordToUpdate.RecId)
             {
+                recordToUpdate.setConnection(userConnection);
                 inboundQueueLocal.setConnection(userConnection);
                 userConnection.ttsbegin();
                 recordToUpdate.VoicePickingStatus = _status ;
