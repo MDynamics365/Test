@@ -1,0 +1,31 @@
+    protected void setProcessingState(RecId _processingRecId, SICVoicePickingStatus _status)
+    {
+        UserConnection                  userConnection  = new UserConnection();
+        SICVoicePickingProcessingTable  recordToUpdate  ;
+        WMHEInboundQueue inboundQueueLocal;
+        try
+        {
+            if (recordToUpdate.RecId)
+            {
+                inboundQueueLocal.setConnection(userConnection);
+                recordToUpdate.setConnection(userConnection);
+                select firstonly forupdate recordToUpdate where recordToUpdate.RecId == _processingRecId ;
+                userConnection.ttsbegin();
+                recordToUpdate.VoicePickingStatus = _status ;
+                recordToUpdate.update() ;
+                select firstOnly forupdate inboundQueueLocal
+                    where inboundQueueLocal.InboundQueueId == recordToUpdate.WMHEInboundQueueId;
+                //Ajouter au log l'étape de la mise à jour du statut du champ VoicePickingStatus de la table SICVoicePickingProcessingTable
+                SICVoicePickingProcessingLogTable::addLog(inboundQueueLocal.MessageId, SICVoicePickingLogType::Step, strFmt("@SIC:SICVoicePickingProcessingTableUpdateStatusLog", _status));
+                inboundQueueLocal.SICVoicePickingStatus = _status ;
+                inboundQueueLocal.doUpdate() ;
+                userConnection.ttscommit();
+                //Ajouter au log l'étape de la mise à jour du statut du champ SICVoicePickingStatus de la table WMHEInboundQueue
+                SICVoicePickingProcessingLogTable::addLog(inboundQueueLocal.MessageId, SICVoicePickingLogType::Step, strFmt("@SIC:WMHEInboundQueueUpdateSICStatusLog", _status));
+            }
+        }
+        finally
+        {
+            userConnection.finalize();
+        }
+    }
