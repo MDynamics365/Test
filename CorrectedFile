@@ -5,20 +5,21 @@
         WMHEInboundQueue inboundQueueLocal;
         try
         {
+            select firstonly forupdate recordToUpdate where recordToUpdate.RecId == _processingRecId ;
+
             if (recordToUpdate.RecId)
             {
-                inboundQueueLocal.setConnection(userConnection);
-                recordToUpdate.setConnection(userConnection);
-                select firstonly forupdate recordToUpdate where recordToUpdate.RecId == _processingRecId ;
-                userConnection.ttsbegin();
-                recordToUpdate.VoicePickingStatus = _status ;
-                recordToUpdate.update() ;
                 select firstOnly forupdate inboundQueueLocal
                     where inboundQueueLocal.InboundQueueId == recordToUpdate.WMHEInboundQueueId;
-                //Ajouter au log l'étape de la mise à jour du statut du champ VoicePickingStatus de la table SICVoicePickingProcessingTable
-                SICVoicePickingProcessingLogTable::addLog(inboundQueueLocal.MessageId, SICVoicePickingLogType::Step, strFmt("@SIC:SICVoicePickingProcessingTableUpdateStatusLog", _status));
+                inboundQueueLocal.setConnection(userConnection);
+                recordToUpdate.setConnection(userConnection);
+                userConnection.ttsbegin();
                 inboundQueueLocal.SICVoicePickingStatus = _status ;
                 inboundQueueLocal.doUpdate() ;
+                recordToUpdate.VoicePickingStatus = _status ;
+                recordToUpdate.update() ;
+                //Ajouter au log l'étape de la mise à jour du statut du champ VoicePickingStatus de la table SICVoicePickingProcessingTable
+                SICVoicePickingProcessingLogTable::addLog(inboundQueueLocal.MessageId, SICVoicePickingLogType::Step, strFmt("@SIC:SICVoicePickingProcessingTableUpdateStatusLog", _status));
                 userConnection.ttscommit();
                 //Ajouter au log l'étape de la mise à jour du statut du champ SICVoicePickingStatus de la table WMHEInboundQueue
                 SICVoicePickingProcessingLogTable::addLog(inboundQueueLocal.MessageId, SICVoicePickingLogType::Step, strFmt("@SIC:WMHEInboundQueueUpdateSICStatusLog", _status));
