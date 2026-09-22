@@ -3,40 +3,35 @@ public class SICUpdateVoicePickingProcessingStatusService extends SysOperationSe
     public void process()
     {
         SICVoicePickingProcessingTable  voicePickingProcessingTable, voicePickProcTableNotProcessed;
+        WMHEInboundQueue                WMHEInboundQueue;
 
         ttsbegin;
-
         while select forupdate voicePickingProcessingTable
             where   voicePickingProcessingTable.VoicePickingStatus  == SICVoicePickingStatus::Processing
         {
+            select firstonly forupdate WMHEInboundQueue
+                where WMHEInboundQueue.InboundQueueId   == voicePickingProcessingTable.WMHEInboundQueueId;
+
+            if(WMHEInboundQueue.SICVoicePickingStatus   == SICVoicePickingStatus::Processing)
+            {
+                WMHEInboundQueue.SICVoicePickingStatus  = SICVoicePickingStatus::Processed;
+                WMHEInboundQueue.doUpdate();
+            }
+
             voicePickingProcessingTable.VoicePickingStatus  = SICVoicePickingStatus::Processed;
             voicePickingProcessingTable.doUpdate();
         }
-
         ttscommit;
 
         ttsbegin;
-
-        // On respecte le mecanisme de chainage sequentiel deja en place sur
-        // SICVoicePickingProcessingTable.insert()/update() (checkProcessing/findNext) :
-        // on ne relance qu'un seul message si rien n'est deja en cours de traitement.
-        // Le traitement de ce message declenchera lui-meme le suivant via
-        // SICVoicePickingProcessingTable.update() une fois son statut passe a Processed/Error.
-        select firstonly recId from voicePickingProcessingTable
-            where   voicePickingProcessingTable.VoicePickingStatus == SICVoicePickingStatus::Processing;
-
-        if (!voicePickingProcessingTable.RecId)
-        {
-            select firstonly voicePickProcTableNotProcessed
+        select firstonly voicePickProcTableNotProcessed
                 order by WMHEInboundQueueId asc
-                where   voicePickProcTableNotProcessed.VoicePickingStatus == SICVoicePickingStatus::NotProcessed;
+            where   voicePickProcTableNotProcessed.VoicePickingStatus   == SICVoicePickingStatus::NotProcessed;
 
-            if (voicePickProcTableNotProcessed.RecId)
-            {
-                SICWMHEWorkConfirmAsync::processAsync(voicePickProcTableNotProcessed);
-            }
+        if(voicePickProcTableNotProcessed)
+        {
+            SICWMHEWorkConfirmAsync::processAsync(voicePickProcTableNotProcessed);
         }
-
         ttscommit;
 
         info("@SYS50639");

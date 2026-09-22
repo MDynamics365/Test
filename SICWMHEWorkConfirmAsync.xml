@@ -177,16 +177,7 @@ internal final class SICWMHEWorkConfirmAsync
                     SICVoicePickingProcessingLogTable::addLog(inboundQueueLocal.MessageId, SICVoicePickingLogType::Warning, warningInfoLogStr);
                 }
             }
-            try
-            {
-                workConfirmAsync.setProcessingState(_processingQueue, SICVoicePickingStatus::Error) ;
-            }
-            catch
-            {
-                //Dernier filet de securite : si la mise a jour du statut Erreur echoue aussi,
-                //on trace l'incident au lieu de laisser le message bloque silencieusement en Processing.
-                SICVoicePickingProcessingLogTable::addLog(inboundQueueLocal.MessageId, SICVoicePickingLogType::Error, "@SIC:SetProcessingStateErrorFailed");
-            }
+            workConfirmAsync.setProcessingState(_processingQueue, SICVoicePickingStatus::Error) ;
         }
     }
 

@@ -57,16 +57,14 @@ public class SICVoicePickingProcessingTable extends common
         super();
 
         // vérifie s'il reste des traitements à lancer
-        if (this.VoicePickingStatus == SICVoicePickingStatus::Processed || this.VoicePickingStatus == SICVoicePickingStatus::Error)
+        if (this.orig().VoicePickingStatus == SICVoicePickingStatus::Processing
+            && (this.VoicePickingStatus == SICVoicePickingStatus::Processed || this.VoicePickingStatus == SICVoicePickingStatus::Error))
         {
-            if (!this.checkProcessing())
+            SICVoicePickingProcessingTable processingTable = this.findNext() ;
+            if (processingTable.RecId)
             {
-                SICVoicePickingProcessingTable processingTable = this.findNext() ;
-                if (processingTable.RecId)
-                {
-                    // on lance le traitement suivant
-                    this.processAsync(processingTable) ;
-                }
+                // on lance le traitement suivant
+                this.processAsync(processingTable) ;
             }
         }
 
