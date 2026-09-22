@@ -1,0 +1,40 @@
+public class SICUpdateVoicePickingProcessingStatusService extends SysOperationServiceBase
+{
+    public void process()
+    {
+        SICVoicePickingProcessingTable  voicePickingProcessingTable, voicePickProcTableNotProcessed;
+        WMHEInboundQueue                WMHEInboundQueue;
+
+        ttsbegin;
+        while select forupdate voicePickingProcessingTable
+            where   voicePickingProcessingTable.VoicePickingStatus  == SICVoicePickingStatus::Processing
+        {
+            select firstonly forupdate WMHEInboundQueue
+                where WMHEInboundQueue.InboundQueueId   == voicePickingProcessingTable.WMHEInboundQueueId;
+
+            if(WMHEInboundQueue.SICVoicePickingStatus   == SICVoicePickingStatus::Processing)
+            {
+                WMHEInboundQueue.SICVoicePickingStatus  = SICVoicePickingStatus::Processed;
+                WMHEInboundQueue.doUpdate();
+            }
+
+            voicePickingProcessingTable.VoicePickingStatus  = SICVoicePickingStatus::Processed;
+            voicePickingProcessingTable.doUpdate();
+        }
+        ttscommit;
+
+        ttsbegin;
+        select firstonly voicePickProcTableNotProcessed
+                order by WMHEInboundQueueId asc
+            where   voicePickProcTableNotProcessed.VoicePickingStatus   == SICVoicePickingStatus::NotProcessed;
+
+        if(voicePickProcTableNotProcessed)
+        {
+            SICWMHEWorkConfirmAsync::processAsync(voicePickProcTableNotProcessed);
+        }
+        ttscommit;
+
+        info("@SYS50639");
+    }
+
+}
