@@ -17,11 +17,24 @@ public class SICUpdateVoicePickingProcessingStatusService extends SysOperationSe
 
         ttsbegin;
 
-        while select voicePickProcTableNotProcessed
-                order by WMHEInboundQueueId asc
-            where   voicePickProcTableNotProcessed.VoicePickingStatus   == SICVoicePickingStatus::NotProcessed
+        // On respecte le mecanisme de chainage sequentiel deja en place sur
+        // SICVoicePickingProcessingTable.insert()/update() (checkProcessing/findNext) :
+        // on ne relance qu'un seul message si rien n'est deja en cours de traitement.
+        // Le traitement de ce message declenchera lui-meme le suivant via
+        // SICVoicePickingProcessingTable.update() une fois son statut passe a Processed/Error.
+        select firstonly recId from voicePickingProcessingTable
+            where   voicePickingProcessingTable.VoicePickingStatus == SICVoicePickingStatus::Processing;
+
+        if (!voicePickingProcessingTable.RecId)
         {
-            SICWMHEWorkConfirmAsync::processAsync(voicePickProcTableNotProcessed);
+            select firstonly voicePickProcTableNotProcessed
+                order by WMHEInboundQueueId asc
+                where   voicePickProcTableNotProcessed.VoicePickingStatus == SICVoicePickingStatus::NotProcessed;
+
+            if (voicePickProcTableNotProcessed.RecId)
+            {
+                SICWMHEWorkConfirmAsync::processAsync(voicePickProcTableNotProcessed);
+            }
         }
 
         ttscommit;
