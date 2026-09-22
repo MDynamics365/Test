@@ -116,6 +116,26 @@ internal final class SICWMHEWorkConfirmAsync
 ]]></Source>
 			</Method>
 			<Method>
+				<Name>processSync</Name>
+				<Source><![CDATA[
+    public static void processSync(SICVoicePickingProcessingTable _processingTable)
+    {
+        WMHEInboundQueueId  inboundQueueId      = _processingTable.WMHEInboundQueueId;
+        RecId               processingQueue     = _processingTable.RecId;
+        recid               workLineRecId       = _processingTable.WHSWorkLineRecId;
+        WHSUserId           userId              = _processingTable.WHSUserId ;
+        boolean             shortPick           = _processingTable.ShortPick ;
+        container           params = [inboundQueueId,processingQueue,workLineRecId,userId,shortPick] ;
+
+        //Appel direct, sans Global::runAsync : utilise pour enchainer le message suivant
+        //depuis l'interieur d'une tache deja asynchrone (pick), ou un second Global::runAsync
+        //imbrique ne demarre pas de facon fiable.
+        SICWMHEWorkConfirmAsync::pick(params) ;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
 				<Name>pick</Name>
 				<Source><![CDATA[
     public static void pick(container _params)

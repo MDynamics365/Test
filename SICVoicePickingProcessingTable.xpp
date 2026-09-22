@@ -29,6 +29,17 @@ public class SICVoicePickingProcessingTable extends common
         return processingTable ;
     }
 
+    protected boolean isOldestPending()
+    {
+        SICVoicePickingProcessingTable processingTable;
+        select firstonly recId
+            from    processingTable
+            where   processingTable.VoicePickingStatus   == SICVoicePickingStatus::NotProcessed
+            &&      processingTable.RecId                != this.RecId
+            &&      processingTable.WMHEInboundQueueId   <  this.WMHEInboundQueueId ;
+        return processingTable.RecId == 0 ;
+    }
+
     /// <summary>
     ///
     /// </summary>
@@ -36,8 +47,9 @@ public class SICVoicePickingProcessingTable extends common
     {
         super();
 
-        // verifie si traitement en cours : si non lance le traitement sinon attend
-        if (!this.checkProcessing())
+        // verifie si traitement en cours et qu'aucun message plus ancien n'attend deja :
+        // si non lance le traitement sinon attend
+        if (!this.checkProcessing() && this.isOldestPending())
         {
             // on lance le traitement
             this.processAsync(this) ;
@@ -47,6 +59,11 @@ public class SICVoicePickingProcessingTable extends common
     protected void processAsync(SICVoicePickingProcessingTable _processingTable)
     {
         SICWMHEWorkConfirmAsync::processAsync(_processingTable) ;
+    }
+
+    protected void processSync(SICVoicePickingProcessingTable _processingTable)
+    {
+        SICWMHEWorkConfirmAsync::processSync(_processingTable) ;
     }
 
     /// <summary>
@@ -63,8 +80,9 @@ public class SICVoicePickingProcessingTable extends common
             SICVoicePickingProcessingTable processingTable = this.findNext() ;
             if (processingTable.RecId)
             {
-                // on lance le traitement suivant
-                this.processAsync(processingTable) ;
+                // on lance le traitement suivant en synchrone : on est deja dans une tache
+                // asynchrone (pick), un second Global::runAsync imbrique ne demarre pas de facon fiable
+                this.processSync(processingTable) ;
             }
         }
 
