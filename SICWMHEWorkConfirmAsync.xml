@@ -1,0 +1,424 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>SICWMHEWorkConfirmAsync</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+internal final class SICWMHEWorkConfirmAsync
+{
+    WHSWorkTable        workTable;
+    boolean             shortPick;
+    WMHEInboundQueue    inboundQueue ;
+    WHSWorkLine         workLineLocal ;
+    WHSWorkExecute      workExecute ;
+    WHSUserId           userId ;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>setProcessingState</Name>
+				<Source><![CDATA[
+    protected void setProcessingState(RecId _processingRecId, SICVoicePickingStatus _status)
+    {
+        UserConnection                  userConnection  = new UserConnection();
+        SICVoicePickingProcessingTable  recordToUpdate  ;
+        WMHEInboundQueue inboundQueueLocal;
+        try
+        {
+            select firstonly forupdate recordToUpdate where recordToUpdate.RecId == _processingRecId ;
+
+            if (recordToUpdate.RecId)
+            {
+                select firstOnly forupdate inboundQueueLocal
+                    where inboundQueueLocal.InboundQueueId == recordToUpdate.WMHEInboundQueueId;
+                inboundQueueLocal.setConnection(userConnection);
+                recordToUpdate.setConnection(userConnection);
+                userConnection.ttsbegin();
+                inboundQueueLocal.SICVoicePickingStatus = _status ;
+                inboundQueueLocal.doUpdate() ;
+                recordToUpdate.VoicePickingStatus = _status ;
+                recordToUpdate.update() ;
+                //Ajouter au log l'étape de la mise à jour du statut du champ VoicePickingStatus de la table SICVoicePickingProcessingTable
+                SICVoicePickingProcessingLogTable::addLog(inboundQueueLocal.MessageId, SICVoicePickingLogType::Step, strFmt("@SIC:SICVoicePickingProcessingTableUpdateStatusLog", _status));
+                userConnection.ttscommit();
+                //Ajouter au log l'étape de la mise à jour du statut du champ SICVoicePickingStatus de la table WMHEInboundQueue
+                SICVoicePickingProcessingLogTable::addLog(inboundQueueLocal.MessageId, SICVoicePickingLogType::Step, strFmt("@SIC:WMHEInboundQueueUpdateSICStatusLog", _status));
+            }
+        }
+        finally
+        {
+            userConnection.finalize();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    protected void init(WMHEInboundQueueId _inboundQueueId, recid _workLineRecId, WHSUserId _userId, boolean _shortPick)
+    {
+        inboundQueue    = WMHEInboundQueue::find(_inboundQueueId) ;
+        workLineLocal   =  WHSWorkLine::findByRecId(_workLineRecId, true) ;
+        workTable       = WHSWorkTable::find(workLineLocal.WorkId, true);
+        workExecute     = new WHSWorkExecute();
+        shortPick       = _shortPick ;
+        userId          = _userId ;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    protected void run()
+    {
+        ttsbegin ;
+        switch (workLineLocal.WorkType)
+        {
+            case WHSWorkType::Pick:
+                if(shortPick)
+                {
+                    this.executeShortPick();
+                }
+                else
+                {
+                    this.executePick();
+                }
+                this.executePut();
+                break;
+
+            default:
+                //Ajouter au log l'erreur concernant le type incorrect de la ligne du travail
+                SICVoicePickingProcessingLogTable::addLog(inboundQueue.MessageId, SICVoicePickingLogType::Error, "@WMHE:WMHE128");
+                throw error("@WMHE:WMHE128");
+        }
+        ttscommit ;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processAsync</Name>
+				<Source><![CDATA[
+    public static void processAsync(SICVoicePickingProcessingTable _processingTable)
+    {
+        WMHEInboundQueueId  inboundQueueId      = _processingTable.WMHEInboundQueueId;
+        RecId               processingQueue     = _processingTable.RecId;
+        recid               workLineRecId       = _processingTable.WHSWorkLineRecId;
+        WHSUserId           userId              = _processingTable.WHSUserId ;
+        boolean             shortPick           = _processingTable.ShortPick ;
+        container           params = [inboundQueueId,processingQueue,workLineRecId,userId,shortPick] ;
+
+        Global::runAsync(classNum(SICWMHEWorkConfirmAsync),staticMethodStr(SICWMHEWorkConfirmAsync, pick), params) ;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>pick</Name>
+				<Source><![CDATA[
+    public static void pick(container _params)
+    {
+        WMHEInboundQueueId  _inboundQueueId      ;
+        RecId               _processingQueue     ;
+        recid               _workLineRecId       ;
+        WHSUserId           _userId ;
+        boolean             _shortPick ;
+        int                 infoLogStartLine;
+
+        [_inboundQueueId,_processingQueue,_workLineRecId,_userId,_shortPick] = _params;
+
+        WMHEInboundQueue inboundQueueLocal = WMHEInboundQueue::find(_inboundQueueId, true );
+        // on met à jour la table de traitement
+        SICWMHEWorkConfirmAsync workConfirmAsync = new SICWMHEWorkConfirmAsync() ;
+        workConfirmAsync.setProcessingState(_processingQueue, SICVoicePickingStatus::Processing) ;
+        try
+        {
+            workConfirmAsync.init(_inboundQueueId, _workLineRecId, _userId, _shortPick) ;
+            //Ajouter au log l'étape du début de prélèvement
+            SICVoicePickingProcessingLogTable::addLog(inboundQueueLocal.MessageId, SICVoicePickingLogType::Step, "@SIC:PickingProcessStart");
+            infoLogStartLine = infologLine();
+            workConfirmAsync.run() ;
+            //Ajouter au log l'étape du la fin de prélèvement
+            SICVoicePickingProcessingLogTable::addLog(inboundQueueLocal.MessageId, SICVoicePickingLogType::Step, "@SIC:PickingProcessEnd");
+            workConfirmAsync.setProcessingState(_processingQueue, SICVoicePickingStatus::Processed) ;
+        }
+        catch
+        {
+            SysInfologEnumerator    infoLogEnum;
+            SysInfoLogStr           errorInfoLogStr, warningInfoLogStr;
+            container               infoLogData = connull();
+            int                     currentLine = infologLine();
+
+            //Obtenir les messages d'erreur lors du prélèvement et les mettres dans le log
+            if(currentLine > infoLogStartLine)
+            {
+                infologData = infolog.copy(infoLogStartLine + 1,  currentLine);
+                infoLogEnum = SysInfologEnumerator::newData(infologData);
+
+                while (infoLogEnum.moveNext())
+                {
+                    if(infoLogEnum.currentException() == Exception::Error)
+                    {
+                        errorInfoLogStr += infoLogEnum.currentMessage();
+                    }
+                    if(infoLogEnum.currentException() == Exception::Warning)
+                    {
+                        warningInfoLogStr += infoLogEnum.currentMessage();
+                    }
+                }
+                if(errorInfoLogStr)
+                {
+                    SICVoicePickingProcessingLogTable::addLog(inboundQueueLocal.MessageId, SICVoicePickingLogType::Error, errorInfoLogStr);
+                }
+                if(warningInfoLogStr)
+                {
+                    SICVoicePickingProcessingLogTable::addLog(inboundQueueLocal.MessageId, SICVoicePickingLogType::Warning, warningInfoLogStr);
+                }
+            }
+            workConfirmAsync.setProcessingState(_processingQueue, SICVoicePickingStatus::Error) ;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>executePick</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Executes a pick for the selected <c>WAXWorkLine</c>.
+    /// </summary>
+    public void executePick()
+    {
+        InventDim   belowLocationInventDim;
+
+        WMSLocation wmsLocation = WMSLocation::find(workLineLocal.wmsLocationId, workTable.InventLocationId);
+        if (!wmsLocation)
+        {
+            //Ajouter au log l'erreur concernant l'emplacement de la ligne du travail
+            SICVoicePickingProcessingLogTable::addLog(inboundQueue.MessageId, SICVoicePickingLogType::Error, "@WMHE:WMHE173");
+            throw error("@WMHE:WMHE173");
+        }
+
+        ttsbegin;
+
+
+        WHSLicensePlateId   targetLicensePlateId = this.determineTargetLP(inboundQueue.data04, inboundQueue.data03);
+        WHSWorkLine         retWorkLine;
+
+        belowLocationInventDim.inventBatchId    = inboundQueue.Data06;
+        belowLocationInventDim.inventSerialId   = inboundQueue.Data07;
+
+        if (wmsLocation.whsLocationIsLPControlled())
+        {
+            // Pick license plate.
+            WHSLicensePlateId lpToPick = inboundQueue.data03;
+
+            belowLocationInventDim.LicensePlateId = lpToPick;
+
+            retWorkLine = workExecute.pickWorkFromLicensePlate(
+                    lpToPick,
+                    workLineLocal,
+                    userId,
+                    belowLocationInventDim,
+                    targetLicensePlateId,
+                    0,
+                    false,
+                    false,
+                    false,
+                    false);
+
+        }
+        else
+        {
+            // Pick from non-lp location
+            retWorkLine = workExecute.pickNonLicensePlateCheckDigitQuantities(
+                    workLineLocal.WorkId,
+                    workLineLocal.LineNum,
+                    workLineLocal.ItemId,
+                    str2Num(inboundQueue.Data05), //workLineLocal.QtyRemain,
+                    0,
+                    workLineLocal.UnitId,
+                    userId,
+                    belowLocationInventDim,
+                    targetLicensePlateId,
+                    false);
+
+        }
+
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>executeShortPick</Name>
+				<Source><![CDATA[
+    public void executeShortPick()
+    {
+        WMSLocation             wmsLocation;
+        WHSLicensePlateId       lpToPick                =   inboundQueue.data03;  // WMHEData3
+        Qty                     qtyToPick               =   str2num(inboundQueue.data05); // WMHEData5
+        WHSWorkExceptionCode    shortPickExceptionCode  =   inboundQueue.data08;
+
+        ttsBegin;
+
+        workTable   = WHSWorkTable::find(workLineLocal.WorkId);
+        wmsLocation = WMSLocation::find(workLineLocal.wmsLocationId, workTable.InventLocationId);
+
+        if (wmsLocation)
+        {
+            this.determineTargetLP(inboundQueue.data04, inboundQueue.data03);
+
+            if (wmsLocation.whsLocationIsLPControlled())
+            {
+                // Pick license plate.
+                workExecute.executeShortPick(
+                    workLineLocal.WorkId,
+                    workLineLocal.LineNum,
+                    shortPickExceptionCode,
+                    qtyToPick,
+                    workLineLocal.UnitId,
+                    userId,
+                    lpToPick,
+                    false);
+            }
+            else
+            {
+                workExecute.executeShortPick(
+                    workLineLocal.WorkId,
+                    workLineLocal.LineNum,
+                    shortPickExceptionCode,
+                    qtyToPick,
+                    workLineLocal.UnitId,
+                    userId,
+                    '',
+                    false);
+            }
+        }
+
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>executePut</Name>
+				<Source><![CDATA[
+    public void executePut()
+    {
+        ttsBegin;
+
+        LineNum             lineNumPut = WHSWorkLine::lastLineNum(workTable.WorkId);
+        WHSWorkLine         WorkLinePut, retWorkLinePickNotClosed;
+
+        select firstonly RecId from retWorkLinePickNotClosed
+            where   retWorkLinePickNotClosed.WorkId      == workTable.WorkId
+            &&      retWorkLinePickNotClosed.WorkType    == WHSWorkType::Pick
+            &&      retWorkLinePickNotClosed.WorkStatus  != WHSWorkStatus::Closed;
+
+        if(!retWorkLinePickNotClosed.RecId)
+        {
+            WorkLinePut = WHSWorkLine::find(workTable.WorkId, lineNumPut);
+            if(WorkLinePut.WorkType == WHSWorkType::Put && WorkLinePut.WorkStatus != WHSWorkStatus::Closed)
+            {
+                workExecute.putAwayToLocation(
+                    WorkLinePut.WorkId,
+                    WorkLinePut.LineNum,
+                    WorkLinePut.WMSLocationId,
+                    WHSWorkPutFlow::MoveAll,
+                    userId,
+                    workTable.TargetLicensePlateId,
+                    workTable.TargetLicensePlateId);
+            }
+        }
+
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>determineTargetLP</Name>
+				<Source><![CDATA[
+    protected WHSTargetLicensePlateId   determineTargetLP(
+        WHSTargetLicensePlateId _providedTargetLP   = '',
+        WHSLicensePlateId       _lpToPick           = '')
+    {
+        WHSTargetLicensePlateId targetLicensePlateId;
+
+        if (workTable.TargetLicensePlateId && !workLineLocal.AskForNewLicensePlate)
+        {
+            targetLicensePlateId = workTable.TargetLicensePlateId;
+        }
+        else
+        {
+            // Use the target LP from the inboundQueue record if provided.
+            if (_providedTargetLP)
+            {
+                if(SICDesactivateTargetLicenseCheckFeature::isEnabled())
+                {
+                    targetLicensePlateId = _providedTargetLP;
+                }
+                else
+                {
+                    if (this.validateTargetLP(_providedTargetLP))
+                    {
+                        targetLicensePlateId = _providedTargetLP;
+                    }
+                    else
+                    {
+                        //Ajouter au log l'erreur concernant la validité du contenant de la ligne du travail
+                        SICVoicePickingProcessingLogTable::addLog(inboundQueue.MessageId, SICVoicePickingLogType::Error, "@WMHE:WMHE178");
+                        throw error("@WMHE:WMHE178");
+                    }
+                }
+            }
+            else if (_lpToPick && workExecute.isWholeLicensePlate(_lpToPick, workLineLocal, true))
+            {
+                targetLicensePlateId = _lpToPick;
+            }
+            else
+            {
+                targetLicensePlateId = WHSLicensePlate::generateLicensePlateId(workLineLocal.ItemId, workLineLocal.UnitId);
+            }
+
+            workTable.selectForUpdate(true);
+            workTable.TargetLicensePlateId = targetLicensePlateId;
+
+            if (workTable.validateWrite())
+            {
+                workTable.write();
+            }
+        }
+
+        return targetLicensePlateId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateTargetLP</Name>
+				<Source><![CDATA[
+    protected boolean validateTargetLP(WHSTargetLicensePlateId _targetLicensePlateId)
+    {
+        boolean             ret = true;
+        WHSRFControlData    rfControlData = new WHSRFControlData();
+
+        if (workLineLocal.WorkType == WHSWorkType::Pick
+            && !rfControlData.validateTargetLicensePlateNotOnWork(_targetLicensePlateId))
+        {
+            //Ajouter au log l'erreur concernant la validité du contenant de la ligne du travail
+            SICVoicePickingProcessingLogTable::addLog(inboundQueue.MessageId, SICVoicePickingLogType::Error, "@WAX2194");
+            ret = checkFailed("@WAX2194");
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

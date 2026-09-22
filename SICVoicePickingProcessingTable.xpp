@@ -1,0 +1,75 @@
+public class SICVoicePickingProcessingTable extends common
+{
+    /// <summary>
+    /// Determines if concurrent deletes should throw exception.
+    /// </summary>
+    /// <returns>true, if exception should be thrown; otherwise, false.</returns>
+    public boolean shouldThrowExceptionOnZeroDelete()
+    {
+        return true;
+    }
+
+    protected boolean checkProcessing()
+    {
+        SICVoicePickingProcessingTable processingTable;
+        select firstonly recId
+            from    processingTable
+            where   processingTable.VoicePickingStatus  == SICVoicePickingStatus::Processing
+            &&      processingTable.RecId               != this.RecId ;
+        return processingTable.RecId != 0 ;
+    }
+
+    protected SICVoicePickingProcessingTable findNext()
+    {
+        SICVoicePickingProcessingTable processingTable;
+        select firstonly processingTable
+            order by WMHEInboundQueueId asc
+            where   processingTable.VoicePickingStatus  == SICVoicePickingStatus::NotProcessed
+            &&      processingTable.RecId               != this.RecId ;
+        return processingTable ;
+    }
+
+    /// <summary>
+    ///
+    /// </summary>
+    public void insert()
+    {
+        super();
+
+        // verifie si traitement en cours : si non lance le traitement sinon attend
+        if (!this.checkProcessing())
+        {
+            // on lance le traitement
+            this.processAsync(this) ;
+        }
+    }
+
+    protected void processAsync(SICVoicePickingProcessingTable _processingTable)
+    {
+        SICWMHEWorkConfirmAsync::processAsync(_processingTable) ;
+    }
+
+    /// <summary>
+    ///
+    /// </summary>
+    public void update()
+    {
+        super();
+
+        // vérifie s'il reste des traitements à lancer
+        if (this.VoicePickingStatus == SICVoicePickingStatus::Processed || this.VoicePickingStatus == SICVoicePickingStatus::Error)
+        {
+            if (!this.checkProcessing())
+            {
+                SICVoicePickingProcessingTable processingTable = this.findNext() ;
+                if (processingTable.RecId)
+                {
+                    // on lance le traitement suivant
+                    this.processAsync(processingTable) ;
+                }
+            }
+        }
+
+    }
+
+}
