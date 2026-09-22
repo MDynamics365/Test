@@ -1,0 +1,67 @@
+public final class SICUpdateVoicePickingProcessingStatusController extends SysOperationServiceController
+{
+    /// <summary>
+    /// create new instance of the class
+    /// </summary>
+    protected void new()
+    {
+
+        super(  classStr(SICUpdateVoicePickingProcessingStatusService),
+                methodStr(SICUpdateVoicePickingProcessingStatusService, process),
+                SysOperationExecutionMode::Synchronous);
+    }
+
+    /// <summary>
+    /// default caption for the prompt
+    /// </summary>
+    /// <returns>the caption</returns>
+    protected ClassDescription defaultCaption()
+    {
+        return "@SIC:SICUpdateVoicePickingProcessingStatusController_Label";
+    }
+
+    /// <summary>
+    /// create a new instance of the class
+    /// </summary>
+    /// <param name = "_executionMode">the execution mode</param>
+    /// <returns>the created instance</returns>
+    public static SICUpdateVoicePickingProcessingStatusController construct(SysOperationExecutionMode _executionMode = SysOperationExecutionMode::Asynchronous)
+    {
+        SICUpdateVoicePickingProcessingStatusController controller = new SICUpdateVoicePickingProcessingStatusController();
+        controller.parmExecutionMode(_executionMode);
+        controller.batchInfo().parmBatchExecute(true);
+        return controller;
+    }
+
+    /// <summary>
+    /// main entry point
+    /// </summary>
+    /// <param name = "_args">arguments</param>
+    public static void main(Args _args)
+    {
+        SICUpdateVoicePickingProcessingStatusController controller;
+
+        controller = SICUpdateVoicePickingProcessingStatusController::construct();
+        controller.parmArgs(_args);
+        controller.startOperation();
+    }
+
+    /// <summary>
+    /// allow execution in new session
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean canRunInNewSession()
+    {
+        return true;
+    }
+
+    /// <summary>
+    /// allow synchronous execution from dialog
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean canGoBatch()
+    {
+        return true;
+    }
+
+}
